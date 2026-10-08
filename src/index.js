@@ -16,7 +16,9 @@ import { canvasToPNGArrayBuffer } from './pdf/render-runtime.js';
 import { getEpubStructure } from './dom/epub/index';
 import { getSnapshotStructure } from './dom/snapshot/index';
 import { packStructuredDocumentText } from '../structured-document-text/src/pack/writer.js';
-import { deflateSync } from 'fflate';
+import { openStructuredDocumentTextPack } from '../structured-document-text/src/read.js';
+import { getChunks, getAnchorContent, getAnchorPositions, CHUNKER_VERSION } from '../structured-document-text/src/chunker/index.js';
+import { deflateSync, inflateSync } from 'fflate';
 
 const EPUB_CONTENT_TYPE = 'application/epub+zip';
 const SOURCE_HASH_RE = /^[0-9a-f]{32}$/u;
@@ -102,6 +104,56 @@ async function getStructuredDocumentText(buf, options = {}) {
 	return { buf: buffer };
 }
 
+/**
+ * Cut a structured document text pack into chunks for embedding, off the
+ * caller's thread: the pack is opened and materialized here, so the caller
+ * neither inflates nor parses it.
+ *
+ * @param {ArrayBuffer} buf - The pack, as getStructuredDocumentText() produces it
+ * @param {Object} [options]
+ * @param {boolean} [options.positions] - Give each chunk the reader
+ *   `positions` its anchor resolves to, as getAnchorPositions() gives them
+ * @returns {Promise<{ chunks: Object[], sourceHash: string, chunkerVersion: number }>}
+ */
+async function getStructuredDocumentTextChunks(buf, { positions = false } = {}) {
+	let structure = await materializePack(buf);
+	let chunks = getChunks(structure);
+	if (positions) {
+		chunks = chunks.map(chunk => ({
+			...chunk,
+			positions: getAnchorPositions(structure, chunk.anchor),
+		}));
+	}
+	return { chunks, sourceHash: structure.metadata.source.hash, chunkerVersion: CHUNKER_VERSION };
+}
+
+/**
+ * Read chunk anchors back from a structured document text pack, off the
+ * caller's thread
+ *
+ * @param {ArrayBuffer} buf - The pack, as getStructuredDocumentText() produces it
+ * @param {Array<Object|null>} anchors - Chunk anchors, as getChunks() gives them
+ * @returns {Promise<Array<Object|null>>} - Per anchor, its content as
+ *   getAnchorContent() gives it plus the reader `positions` it resolves to,
+ *   or null where it doesn't resolve
+ */
+async function readStructuredDocumentTextAnchors(buf, anchors) {
+	let structure = await materializePack(buf);
+	return anchors.map((anchor) => {
+		let content = anchor ? getAnchorContent(structure, anchor) : null;
+		return content?.text
+			? { ...content, positions: getAnchorPositions(structure, anchor) }
+			: null;
+	});
+}
+
+async function materializePack(buf) {
+	let reader = await openStructuredDocumentTextPack(new Uint8Array(buf), {
+		inflate: bytes => inflateSync(bytes),
+	});
+	return reader.materialize();
+}
+
 const pdf = {
 	writeAnnotations,
 	importAnnotations,
@@ -119,6 +171,8 @@ const pdf = {
 export {
 	pdf,
 	getStructuredDocumentText,
+	getStructuredDocumentTextChunks,
+	readStructuredDocumentTextAnchors,
 };
 
 function errObject(err) {
@@ -328,6 +382,42 @@ if (typeof self !== 'undefined') {
 					responseID: message.id,
 					data
 				}, [data.buf]);
+			}
+			catch (e) {
+				self.postMessage({
+					responseID: message.id,
+					error: errObject(e)
+				}, []);
+			}
+		}
+		else if (message.action === 'sdt.getChunks') {
+			try {
+				let data = await getStructuredDocumentTextChunks(
+					message.data.buf,
+					{ positions: message.data.positions }
+				);
+				self.postMessage({
+					responseID: message.id,
+					data
+				}, []);
+			}
+			catch (e) {
+				self.postMessage({
+					responseID: message.id,
+					error: errObject(e)
+				}, []);
+			}
+		}
+		else if (message.action === 'sdt.readAnchors') {
+			try {
+				let data = await readStructuredDocumentTextAnchors(
+					message.data.buf,
+					message.data.anchors
+				);
+				self.postMessage({
+					responseID: message.id,
+					data
+				}, []);
 			}
 			catch (e) {
 				self.postMessage({

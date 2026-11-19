@@ -813,8 +813,7 @@ async function hasAnnotations(buf, password) {
  * @param      {boolean}  [arg4.fixTiny=false]   Whether to convert certain
  *                                               highlights to image annotation
  *                                               (see above)
- * @return     {Promise}  Promise resolves with no value once all annotations
- *                        have been processed (inline).
+ * @return     {Promise<Array>}  The processed annotations
  */
 async function processAnnotations(annotations, pdf, dataProvider, { keepText = false, fixTiny = false } = {}) {
 	let pageHeight;
@@ -830,7 +829,7 @@ async function processAnnotations(annotations, pdf, dataProvider, { keepText = f
 		annotation.pageLabel = pageLabels[pageIndex];
 
 		let offset = 0;
-		if (annotation.type === 'highlight') {
+		if (['highlight', 'underline'].includes(annotation.type)) {
 			let range = getRangeByHighlight(chars, annotation.position.rects);
 			if (range) {
 				offset = range.offset;
@@ -864,6 +863,32 @@ async function processAnnotations(annotations, pdf, dataProvider, { keepText = f
 			delete annotation.text;
 		}
 	}
+	return annotations;
+}
+
+/**
+ * Give highlight or underline annotations over selected text what the file
+ * alone knows: the page label and the sort index. Their text, which is
+ * what their rectangles cover, is kept as given.
+ *
+ * @param {ArrayBuffer} buf
+ * @param {Object[]} annotations - With type, color, text, comment, tags and
+ *     a position of { pageIndex, rects, nextPageRects? }
+ * @param {String} [password]
+ * @param {Function} dataProvider
+ * @returns {Promise<Object[]>} - The annotations, with pageLabel and sortIndex
+ *     from their first page
+ */
+async function createSelectionAnnotations(buf, annotations, password, dataProvider) {
+	let pdfManager = await getPdfManager(buf, password);
+	let round = rects => rects.map(rect => rect.map(n => Math.round(n * 1000) / 1000));
+	for (let annotation of annotations) {
+		annotation.position.rects = round(annotation.position.rects);
+		if (annotation.position.nextPageRects) {
+			annotation.position.nextPageRects = round(annotation.position.nextPageRects);
+		}
+	}
+	return processAnnotations(annotations, { pdfManager }, dataProvider, { keepText: true });
 }
 
 async function importCitaviAnnotations(buf, citaviAnnotations, password, dataProvider) {
@@ -961,6 +986,7 @@ export {
 	getPdfManager,
 	importCitaviAnnotations,
 	importMendeleyAnnotations,
+	createSelectionAnnotations,
 	hasAnnotations,
 	openRenderablePdfDocument,
 	renderAnnotations,

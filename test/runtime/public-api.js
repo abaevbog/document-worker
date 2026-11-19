@@ -1,6 +1,10 @@
 export const mainExportNames = [
 	'pdf',
 	'getStructuredDocumentText',
+	'getStructuredDocumentTextChunks',
+	'readStructuredDocumentTextAnchors',
+	'locateStructuredDocumentTextRanges',
+	'createAnnotations',
 ];
 
 export const mainAbsentExportNames = [
@@ -35,6 +39,10 @@ export const workerActionNames = [
 	'pdf.getFulltext',
 	'pdf.getRecognizerData',
 	'getStructuredDocumentText',
+	'sdt.getChunks',
+	'sdt.readAnchors',
+	'sdt.locateRanges',
+	'createAnnotations',
 	'pdf.renderAnnotations',
 	'pdf.renderArea',
 	'pdf.hasAnnotations',

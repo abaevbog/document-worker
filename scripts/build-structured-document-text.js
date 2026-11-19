@@ -1,16 +1,21 @@
 import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
 import * as esbuild from 'esbuild';
 
-const outfile = 'build/structured-document-text.js';
+// The pack reader and the chunker, bundled separately for the main thread
+const bundles = {
+	'structured-document-text/src/read.js': 'build/structured-document-text.js',
+	'structured-document-text/src/chunker/index.js': 'build/structured-document-text-chunker.js',
+};
 
-await mkdir(dirname(outfile), { recursive: true });
+await mkdir('build', { recursive: true });
 
-await esbuild.build({
-	entryPoints: ['structured-document-text/src/read.js'],
-	bundle: true,
-	platform: 'browser',
-	target: ['firefox140'],
-	format: 'cjs',
-	outfile,
-});
+for (let [entryPoint, outfile] of Object.entries(bundles)) {
+	await esbuild.build({
+		entryPoints: [entryPoint],
+		bundle: true,
+		platform: 'browser',
+		target: ['firefox140'],
+		format: 'cjs',
+		outfile,
+	});
+}

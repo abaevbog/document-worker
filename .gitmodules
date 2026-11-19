@@ -3,4 +3,4 @@
 	url = https://github.com/zotero/pdf.js.git
 [submodule "structured-document-text"]
 	path = structured-document-text
-	url = https://github.com/zotero/structured-document-text.git
+	url = https://github.com/abaevbog/structured-document-text.git
